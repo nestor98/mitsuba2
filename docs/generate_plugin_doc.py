@@ -77,7 +77,12 @@ RFILTER_ORDERING = ['box',
                     'lanczos']
 
 PHASE_ORDERING = ['isotropic',
-                  'hg']
+                  'hg',
+                  'sggx']
+
+VOLUME_ORDERING = ['constant3d',
+                   'grid3d']
+
 
 def find_order_id(filename, ordering):
     f = os.path.split(filename)[-1].split('.')[0]
@@ -150,7 +155,7 @@ def generate(build_dir):
         # process_src(f, 'subsurface')
         # process_src(f, 'medium', 'section_media')
         process_src(f, 'phase', ordering=PHASE_ORDERING)
-        # process_src(f, 'volume', 'section_volumes')
+        process_src(f, 'volumes', ordering=VOLUME_ORDERING)
         process_src(f, 'emitters', 'section_emitter', EMITTER_ORDERING)
         process_src(f, 'sensors', 'section_sensor', SENSOR_ORDERING)
         process_src(f, 'textures', 'section_texture', TEXTURE_ORDERING)
