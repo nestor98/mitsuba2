@@ -76,6 +76,9 @@ RFILTER_ORDERING = ['box',
                     'catmullrom',
                     'lanczos']
 
+MEDIUM_ORDERING = ['homogeneous',
+                   'heterogeneous']
+
 PHASE_ORDERING = ['isotropic',
                   'hg',
                   'sggx']
@@ -152,8 +155,7 @@ def generate(build_dir):
     with open(os.path.join(build_dir, 'plugins.rst'), 'w') as f:
         process_src(f, 'shapes', 'section_shape', SHAPE_ORDERING)
         process_src(f, 'bsdfs', 'section_bsdf', BSDF_ORDERING)
-        # process_src(f, 'subsurface')
-        # process_src(f, 'medium', 'section_media')
+        process_src(f, 'media', 'section_media', ordering=MEDIUM_ORDERING)
         process_src(f, 'phase', ordering=PHASE_ORDERING)
         process_src(f, 'volumes', ordering=VOLUME_ORDERING)
         process_src(f, 'emitters', 'section_emitter', EMITTER_ORDERING)
