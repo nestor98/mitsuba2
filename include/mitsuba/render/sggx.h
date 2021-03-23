@@ -2,57 +2,9 @@
 
 #include <mitsuba/core/vector.h>
 #include <mitsuba/render/interaction.h>
+#include <mitsuba/core/warp.h>
 
 NAMESPACE_BEGIN(mitsuba)
-
-
-// MTS_VARIANT
-// Normal<Float, 3> sggx_sample_vndf(const MediumInteraction<Float, Spectrum> &mi,
-//                              const Point<Float, 2> &sample,
-//                              const Vector<Float, 6> &s) {
-//     const size_t XX = 0, YY = 1, ZZ = 2, XY = 3, XZ = 4, YZ = 5;
-
-//     using Matrix3f = ek::Matrix<Float, 3>;
-//     using Vector3f = Vector<Float, 3>;
-
-//     // Build orthonormal basis around wi
-//     // auto [wk, wj] = coordinate_system(miwi);
-//     const Vector3f &wi = mi.wi;
-//     const Vector3f &wk = mi.sh_frame.s;
-//     const Vector3f &wj = mi.sh_frame.t;
-
-//     // Project S into this basis
-//     Float S_kk = wk.x()*wk.x()*s[XX] + wk.y()*wk.y()*s[YY] + wk.z()*wk.z()*s[ZZ] + 2.0f * (wk.x()*wk.y()*s[XY] + wk.x()*wk.z()*s[XZ] + wk.y()*wk.z()*s[YZ]);
-//     Float S_jj = wj.x()*wj.x()*s[XX] + wj.y()*wj.y()*s[YY] + wj.z()*wj.z()*s[ZZ] + 2.0f * (wj.x()*wj.y()*s[XY] + wj.x()*wj.z()*s[XZ] + wj.y()*wj.z()*s[YZ]);
-//     Float S_ii = wi.x()*wi.x()*s[XX] + wi.y()*wi.y()*s[YY] + wi.z()*wi.z()*s[ZZ] + 2.0f * (wi.x()*wi.y()*s[XY] + wi.x()*wi.z()*s[XZ] + wi.y()*wi.z()*s[YZ]);
-//     Float S_kj = wk.x()*wj.x()*s[XX] + wk.y()*wj.y()*s[YY] + wk.z()*wj.z()*s[ZZ] + (wk.x()*wj.y() + wk.y()*wj.x()) * s[XY] + (wk.x()*wj.z() + wk.z()*wj.x())*s[XZ] + (wk.y()*wj.z() + wk.z()*wj.y())*s[YZ];
-//     Float S_ki = wk.x()*wi.x()*s[XX] + wk.y()*wi.y()*s[YY] + wk.z()*wi.z()*s[ZZ] + (wk.x()*wi.y() + wk.y()*wi.x()) * s[XY] + (wk.x()*wi.z() + wk.z()*wi.x())*s[XZ] + (wk.y()*wi.z() + wk.z()*wi.y())*s[YZ];
-//     Float S_ji = wj.x()*wi.x()*s[XX] + wj.y()*wi.y()*s[YY] + wj.z()*wi.z()*s[ZZ] + (wj.x()*wi.y() + wj.y()*wi.x()) * s[XY] + (wj.x()*wi.z() + wj.z()*wi.x())*s[XZ] + (wj.y()*wi.z() + wj.z()*wi.y())*s[YZ];
-
-
-//     // Compute normal in local coords
-//     Float sqrt_det_Skji = ek::safe_sqrt(S_kk*S_jj*S_ii - S_kj*S_kj*S_ii - S_ki*S_ki*S_jj -
-//                                     S_ji*S_ji*S_kk + 2.0f*S_kj*S_ki*S_ji);
-//     Float inv_sqrt_S_ii = ek::safe_rsqrt(S_ii);
-
-//     Float sqrt_tmp     = ek::safe_sqrt(S_jj * S_ii - S_ji * S_ji);
-//     Float inv_sqrt_tmp = ek::safe_rsqrt(S_jj * S_ii - S_ji * S_ji);
-
-//     Vector3f Mk(sqrt_det_Skji*inv_sqrt_tmp, 0.0f, 0.0f);
-//     Vector3f Mj(-inv_sqrt_S_ii*(S_ki*S_ji - S_kj*S_ii)*inv_sqrt_tmp,
-//                 inv_sqrt_S_ii*sqrt_tmp, 0.0f);
-//     Vector3f Mi(inv_sqrt_S_ii*S_ki, inv_sqrt_S_ii*S_ji, inv_sqrt_S_ii*S_ii);
-
-//     // Uniform sample on the visible sphere
-//     Vector3f uvw = warp::square_to_cosine_hemisphere(sample);
-
-//     // Compute normal and rotate to world space
-//     Vector3f m_kji = uvw.x()*Mk + uvw.y()*Mj + uvw.z()*Mi;
-//     Normal3f m = ek::normalize(m_kji.x()*wk + m_kji.y()*wj + m_kji.z()*wi);
-
-//     return m;
-// }
-
 
 MTS_VARIANT
 Normal<Float, 3> sggx_sample_vndf(const MediumInteraction<Float, Spectrum> &mi,
