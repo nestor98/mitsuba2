@@ -75,7 +75,7 @@ public:
                                       Mask active) const override {
         MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionSample, active);
         auto s = eval_ndf_params(mi, active);
-        auto sampled_n = sggx_sample_vndf(mi, sample, s);
+        auto sampled_n = sggx_sample_vndf(mi.sh_frame, sample, s);
 
         if (m_diffuse) {
             Frame3f frame(sampled_n);
@@ -96,7 +96,7 @@ public:
         MTS_MASKED_FUNCTION(ProfilerPhase::PhaseFunctionEvaluate, active);
         auto s = eval_ndf_params(mi, active);
         if (m_diffuse) {
-            auto sampled_n = sggx_sample_vndf(mi, ctx.sampler->next_2d(active), s);
+            auto sampled_n = sggx_sample_vndf(mi.sh_frame, ctx.sampler->next_2d(active), s);
             return ek::InvPi<Float> * ek::max(ek::dot(wo, sampled_n), 0.f);
         } else {
             return 0.25f * sggx_ndf_pdf(ek::normalize(wo + mi.wi), s) / sggx_projected_area(mi.wi, s);
