@@ -8,9 +8,10 @@
 #include <mitsuba/render/interaction.h>
 #include <mitsuba/render/shape.h>
 
-#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\primitives\examples\displaced-sphere.hpp"
+#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\sdf.h"
+//#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\primitives\examples\displaced-sphere.hpp"
 
-#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\sphere-marcher\sphere-marcher.hpp"
+//#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\sphere-marcher\sphere-marcher.hpp"
 
 
 
@@ -29,6 +30,10 @@ SDF (:monosp:`SDF`)
 
 .. pluginparameters::
 
+
+ * - basesdf
+   - |string|
+   - Base SDF (Default: sphere)
  * - center
    - |point|
    - Center of the SDF (Default: (0, 0, 0))
@@ -44,6 +49,7 @@ SDF (:monosp:`SDF`)
    -  Specifies an optional linear object-to-world transformation.
       Note that non-uniform scales and shears are not permitted!
       (Default: none, i.e. object space = world space)
+
 
 .. subfigstart::
 .. subfigure:: ../../resources/data/docs/images/render/shape_SDF_basic.jpg
@@ -93,25 +99,25 @@ This makes it a good default choice for lighting new scenes.
 template <typename Float, typename Spectrum>
 class SDFWrapper final : public Shape<Float, Spectrum> {
 private:
-    
+
     using Double = std::conditional_t<is_cuda_array_v<Float>, Float, Float64>;
     using Double3 = Vector<Double, 3>;
-    
+
     using float3 = std::array<float, 3>;
 
     // convert Double3 to float3
-    float3 toFloat3(const Double3& v) const { 
+    float3 toFloat3(const Double3& v) const {
         float3 res;
         for (int i = 0; i < 3; i++) {
             res[i] = float(v[i]);
         }
         return res;
-    } 
+    }
 
      // convert float3 to normal
     mitsuba::Normal<float,3> toNormal(const float3 &v) const {
         //return mitsuba::Normal<float,3>(v[0], v[1], v[2]);
-        
+
         mitsuba::Normal<float,3> n(v[0], v[1], v[2]);
         //std::cout << n << "\n";
         return n;
@@ -124,17 +130,40 @@ public:
 
     using typename Base::ScalarSize;
 
-    SDFWrapper(const Properties &props) : Base(props) {
+    SDFWrapper(const Properties &props) : Base(props), marcher(100000, 10000.0f, 1e-3) {
         /// Are the SDF normals pointing inwards? default: no
         m_flip_normals = props.bool_("flip_normals", false);
 
+        std::cout << "props: " << props << "\n";
+        if (props.has_property("basesdf"))
+            m_basesdf = props.string("basesdf");
         // Update the to_world transform if radius and center are also provided
         m_to_world = m_to_world * ScalarTransform4f::translate(props.point3f("center", 0.f));
-        m_to_world = m_to_world * ScalarTransform4f::scale(props.float_("radius", 1.f));
-        // DEBUG:
-        sdf = std::make_shared<SDFDisplacedSphere>(float3{0.f,0.f,0.f}, props.float_("radius", 1.f));
+        float r = props.float_("radius", 1.f);
+        //m_to_world = m_to_world * ScalarTransform4f::scale(r);
+        m_radius = r;
+        // Sphere --------------------------------
+        sdf = sdf::Sphere(float3{ 0.f, 0.f, 0.f }, r);
+        
+        // Disp:
+        //sdf = sdf::Displacement(sdf::Sphere(float3{ 0.f, 0.f, 0.f }, r), sdf::SineSDF(0, 5.0/r, 0.2*r));
+        /* Union --------------------------------
+        sdf = sdf::Union(sdf::Sphere({ -1.5f * r, 0, 0 }, r),
+                   sdf::Sphere({ 0, 0, 0 }, r),
+                   sdf::Sphere({ +1.5f * r, 0, 0 }, r));
+        */
+        //std::cout << props.
+        if (props.has_property("basesdf")) {
+            sdf = sdf::from_commandline(std::vector<std::string>{std::string("-sdf"), props.string("basesdf"), "-r", std::to_string(m_radius)});
+        } 
+        
+        if (props.has_property("modification") &&
+            props.string("modification") == std::string("sinedisplacement")) // TODO: args in xml
+            sdf = sdf::Displacement(sdf, sdf::SineSDF(0, 5.0 / r, 0.1 * r));
+        //sdf->setNormalEpsilon(r * 1e-4);
+        //sdf->setIntersectionEpsilon(r * 1e-2);
         update();
-        set_children(); 
+        set_children();
     }
 
     void update() {
@@ -149,7 +178,7 @@ public:
             Log(Warn, "'to_world' transform shouldn't contain non-uniform scaling!");
 
         m_center = T;
-        m_radius = S[0][0];
+        //m_radius = S[0][0];
 
         if (m_radius <= 0.f) {
             m_radius = std::abs(m_radius);
@@ -157,7 +186,8 @@ public:
         }
 
         // Reconstruct the to_world transform with uniform scaling and no shear
-        m_to_world = transform_compose(ScalarMatrix3f(m_radius), Q, T);
+        //m_to_world  = transform_compose(ScalarMatrix3f(m_radius), Q, T);
+        m_to_world = transform_compose(ScalarMatrix3f(1.0f), Q, T); // no scaling for sdfs!
         m_to_object = m_to_world.inverse();
 
         m_inv_surface_area = rcp(surface_area());
@@ -166,8 +196,10 @@ public:
 
     ScalarBoundingBox3f bbox() const override {
         ScalarBoundingBox3f bbox;
-        bbox.min = m_center - m_radius-20000;
-        bbox.max = m_center + m_radius+20000;
+        // Temporary:
+        bbox.min = m_center - m_radius*5.0f;
+        bbox.max = m_center + m_radius*5.0f;
+        // ...
         return bbox;
     }
 
@@ -321,19 +353,19 @@ public:
 
         // Sphere marching intersection:
         //std::cout << "Vamos a trazar esferas\n";
-        std::optional<rayMarching::Intersection> is =
-            rayMarching::sphereTrace(toFloat3(o), toFloat3(d), *sdf);
-        Mask solution_found = bool(is) && is->t>=mint;
+        auto is = marcher.trace(sdf, toFloat3(o), toFloat3(d));
+        Mask solution_found = bool(is) && is->distance>=mint && is->distance>0;
 
         active &= solution_found;// && !out_bounds && !in_bounds;
+        
 
         PreliminaryIntersection3f pi = zero<PreliminaryIntersection3f>();
         pi.t = select(active,
-                      is->t,
+                      is->distance,
                       math::Infinity<Float>);
         pi.shape = this;
 
-        //if (is) 
+        //if (is)
           //  std::cout << "PreliminaryIntersection: " << pi.t << "\n";
 
         return pi;
@@ -350,9 +382,8 @@ public:
         Double3 d(ray.d);
 
         // Sphere marching intersection:
-        std::optional<rayMarching::Intersection> is =
-            rayMarching::sphereTrace(toFloat3(o), toFloat3(d), *sdf);
-        Mask solution_found = bool(is) && is->t >= mint;// && is->t > 0;
+        auto is = marcher.trace(sdf, toFloat3(o), toFloat3(d));
+        Mask solution_found = bool(is) && is->distance >= mint && is->distance > 0; // && is->distance > 0;
         //std::cout << "RayTest: " << solution_found << "\n";
 
         return solution_found && active; // !out_bounds && !in_bounds;
@@ -380,56 +411,64 @@ public:
         si.t = select(active, pi.t, math::Infinity<Float>);
         // Point for normal
         auto p = ray(pi.t);//fmadd(ray.d, si.t, ray.o);//ray.o + ray.d*si.t;
+        auto pLocal = m_to_object.transform_affine(p);
         // Normal
         // si.sh_frame.n = normalize(ray(pi.t) - m_center);
-        si.sh_frame.n = normalize(toNormal(sdf->normal(toFloat3(p))));
+        si.sh_frame.n = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
 
         // separate point from surface?:
-        float eps = m_radius/1000.0;
+        float eps = marcher.getEps() * 2.0f; // m_radius/1000.0;
         si.p = fmadd(si.sh_frame.n, eps, p);
+        //si.p      = p;
+        if (likely(has_flag(flags, HitComputeFlags::UV))) {
+            // std::cout << "UV not implemented in SDF!" << '\n';
+            Vector3f local = m_to_object.transform_affine(si.p);
+            //
+            Float rd_2  = sqr(local.x()) + sqr(local.y()),
+                  theta = unit_angle_z(local),
+                  phi   = atan2(local.y(), local.x());
 
-        // if (likely(has_flag(flags, HitComputeFlags::UV))) {
-        //     Vector3f local = m_to_object.transform_affine(si.p);
-        //
-        //     Float rd_2  = sqr(local.x()) + sqr(local.y()),
-        //           theta = unit_angle_z(local),
-        //           phi   = atan2(local.y(), local.x());
-        //
-        //     masked(phi, phi < 0.f) += 2.f * math::Pi<Float>;
-        //
-        //     si.uv = Point2f(phi * math::InvTwoPi<Float>, theta * math::InvPi<Float>);
-        //     if (likely(has_flag(flags, HitComputeFlags::dPdUV))) {
-        //         si.dp_du = Vector3f(-local.y(), local.x(), 0.f);
-        //
-        //         Float rd      = sqrt(rd_2),
-        //               inv_rd  = rcp(rd),
-        //               cos_phi = local.x() * inv_rd,
-        //               sin_phi = local.y() * inv_rd;
-        //
-        //         si.dp_dv = Vector3f(local.z() * cos_phi,
-        //                             local.z() * sin_phi,
-        //                             -rd);
-        //
-        //         Mask singularity_mask = active && eq(rd, 0.f);
-        //         if (unlikely(any(singularity_mask)))
-        //             si.dp_dv[singularity_mask] = Vector3f(1.f, 0.f, 0.f);
-        //
-        //         si.dp_du = m_to_world * si.dp_du * (2.f * math::Pi<Float>);
-        //         si.dp_dv = m_to_world * si.dp_dv * math::Pi<Float>;
-        //     }
-        // }
+            masked(phi, phi < 0.f) += 2.f * math::Pi<Float>;
+
+            si.uv = Point2f(phi * math::InvTwoPi<Float>, theta * math::InvPi<Float>);
+            if (likely(has_flag(flags, HitComputeFlags::dPdUV))) {
+                // std::cout << "dPdUV in SDF!" << '\n';
+                si.dp_du = Vector3f(-local.y(), local.x(), 0.f);
+
+                Float rd      = sqrt(rd_2),
+                      inv_rd  = rcp(rd),
+                      cos_phi = local.x() * inv_rd,
+                      sin_phi = local.y() * inv_rd;
+
+                si.dp_dv = Vector3f(local.z() * cos_phi,
+                                    local.z() * sin_phi,
+                                    -rd);
+
+                Mask singularity_mask = active && eq(rd, 0.f);
+                if (unlikely(any(singularity_mask)))
+                    si.dp_dv[singularity_mask] = Vector3f(1.f, 0.f, 0.f);
+
+                si.dp_du = m_to_world * si.dp_du * (2.f * math::Pi<Float>);
+                si.dp_dv = m_to_world * si.dp_dv * math::Pi<Float>;
+            }
+        }
 
         if (m_flip_normals)
             si.sh_frame.n = -si.sh_frame.n;
-
+        // Geometric normal:
         si.n = si.sh_frame.n;
         // << "SurfaceInteraction: " << si.n << "\n";
-        // 
-        // if (has_flag(flags, HitComputeFlags::dNSdUV)) {
-        //     ScalarFloat inv_radius = (m_flip_normals ? -1.f : 1.f) / m_radius;
-        //     si.dn_du = si.dp_du * inv_radius;
-        //     si.dn_dv = si.dp_dv * inv_radius;
-        // }
+        //
+        if (has_flag(flags, HitComputeFlags::dNSdUV)) {
+            std::cout << "dNSdUV not implemented!" << '\n';
+            // ScalarFloat inv_radius = (m_flip_normals ? -1.f : 1.f) / m_radius;
+            // si.dn_du = si.dp_du * inv_radius;
+            // si.dn_dv = si.dp_dv * inv_radius;
+        }
+
+        if (!si.is_valid()) {
+          std::cout << "invalid SI !!" << '\n';
+        }
 
         return si;
     }
@@ -488,7 +527,10 @@ private:
 
     bool m_flip_normals;
 
-    std::shared_ptr<SDF> sdf; // The sdf defining the shape
+    std::string m_basesdf;
+
+    sdf::SDF sdf = sdf::Sphere(); // The sdf defining the shape
+    sdf::SphereMarcher marcher;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(SDFWrapper, Shape)
