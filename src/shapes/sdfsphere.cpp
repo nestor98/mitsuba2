@@ -8,6 +8,7 @@
 #include <mitsuba/render/interaction.h>
 #include <mitsuba/render/shape.h>
 
+
 #include "D:\Universidad\cuarto-2\TFG\TFG-SDF\sdf.h"
 //#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\primitives\examples\displaced-sphere.hpp"
 
@@ -134,12 +135,12 @@ public:
         /// Are the SDF normals pointing inwards? default: no
         m_flip_normals = props.bool_("flip_normals", false);
 
-        std::cout << "props: " << props << "\n";
+        //std::cout << "props: " << props << "\n";
         if (props.has_property("basesdf"))
             m_basesdf = props.string("basesdf");
         // Update the to_world transform if radius and center are also provided
         m_to_world = m_to_world * ScalarTransform4f::translate(props.point3f("center", 0.f));
-        float r = props.float_("radius", 1.f);
+        float r = (props.has_property("radius")) ? props.float_("radius", 1.f) : 1;
         //m_to_world = m_to_world * ScalarTransform4f::scale(r);
         m_radius = r;
         // Sphere --------------------------------
@@ -154,12 +155,43 @@ public:
         */
         //std::cout << props.
         if (props.has_property("basesdf")) {
-            sdf = sdf::from_commandline(std::vector<std::string>{std::string("-sdf"), props.string("basesdf"), "-r", std::to_string(m_radius)});
+            //sdf = sdf::from_commandline(std::vector<std::string>{std::string("-sdf"), props.string("basesdf"), "-r", std::to_string(m_radius)});
+            std::vector<std::string> args{
+                std::string("-sdf"),
+                props.string("basesdf"),
+            };
+            if (props.has_property("iterations")) // fractals, etc
+                args.emplace_back(std::to_string(props.int_("iterations")));
+            std::vector<std::string> possible_mods{"rotate-x","rotate-z", "rotate-y", "scale", "move", "mirror"};
+            for (const auto &mod : possible_mods) {
+                if (props.has_property(mod)) {
+                    args.emplace_back("-mod");
+                    args.emplace_back(mod);
+                    args.emplace_back(props.string(mod));
+                } 
+            }
+            std::string disp = "sine-displacement";
+            if (props.has_property(disp)) {
+                args.emplace_back("-mod");
+                args.emplace_back(disp);
+                props.mark_queried(disp);
+                std::vector<std::string> disp_args{ "-f", "-a","-c"};
+                for (const auto &arg : disp_args) {
+                    if (props.has_property(arg)) {
+                        args.emplace_back(arg);
+                        args.emplace_back(props.string(arg));
+                    }
+                }
+            }
+
+            sdf = sdf::from_commandline(args);
         } 
         
         if (props.has_property("modification") &&
             props.string("modification") == std::string("sinedisplacement")) // TODO: args in xml
             sdf = sdf::Displacement(sdf, sdf::SineSDF(0, 5.0 / r, 0.1 * r));
+
+
         //sdf->setNormalEpsilon(r * 1e-4);
         //sdf->setIntersectionEpsilon(r * 1e-2);
         update();
@@ -193,12 +225,13 @@ public:
         m_inv_surface_area = rcp(surface_area());
     }
 
-
+    
     ScalarBoundingBox3f bbox() const override {
         ScalarBoundingBox3f bbox;
         // Temporary:
-        bbox.min = m_center - m_radius*5.0f;
-        bbox.max = m_center + m_radius*5.0f;
+        bbox.min = -std::numeric_limits<float>::infinity(); // m_center - m_radius*5000.0f;
+        bbox.max = std::numeric_limits<float>::infinity();// m_center +
+                                                          // m_radius*5000.0f;
         // ...
         return bbox;
     }
@@ -417,7 +450,7 @@ public:
         si.sh_frame.n = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
 
         // separate point from surface?:
-        float eps = marcher.getEps() * 2.0f; // m_radius/1000.0;
+        float eps = marcher.getEps() * 200.0f; // m_radius/1000.0;
         si.p = fmadd(si.sh_frame.n, eps, p);
         //si.p      = p;
         if (likely(has_flag(flags, HitComputeFlags::UV))) {
@@ -493,7 +526,8 @@ public:
 
     void optix_prepare_geometry() override {
         if constexpr (is_cuda_array_v<Float>) {
-            if (!m_optix_data_ptr)
+            if (!m_optix_data_ptr
+
                 m_optix_data_ptr = cuda_malloc(sizeof(OptixSDFData));
 
             OptixSDFData data = { bbox(), m_to_world, m_to_object,
