@@ -9,7 +9,7 @@ add_plugin(cylinder    cylinder.cpp)
 add_plugin(disk        disk.cpp)
 add_plugin(rectangle   rectangle.cpp)
 add_plugin(sphere      sphere.cpp)
-add_plugin(sdfsphere      sdfsphere.cpp)
+add_plugin(sdfwrapper      sdfwrapper.cpp)
 
 
 add_plugin(shapegroup  shapegroup.cpp)
