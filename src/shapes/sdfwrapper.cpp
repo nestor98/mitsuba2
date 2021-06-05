@@ -115,6 +115,17 @@ private:
         return res;
     }
 
+    void splitAndAppend(const std::string &s, std::vector<std::string> &v,
+                        char sep = ' ') 
+    {
+        std::istringstream iss(s);
+        std::string token;
+        while (std::getline(iss, token, sep))
+            v.push_back(token);
+        //for (const auto &e : v)
+        //    std::cout << e << "\n";
+    }
+
      // convert float3 to normal
     mitsuba::Normal<float,3> toNormal(const float3 &v) const {
         //return mitsuba::Normal<float,3>(v[0], v[1], v[2]);
@@ -131,7 +142,10 @@ public:
 
     using typename Base::ScalarSize;
 
-    SDFWrapper(const Properties &props) : Base(props), marcher(100000, 10000.0f, 1e-3) {
+    SDFWrapper(const Properties &props)
+        : Base(props), marcher(100000000, 1500, 1e-2) // marcher(1000000, 1500.0f, 1e-1)
+          //marcher(10000, 2000.0f, 0.5, 10)
+ { // std::numeric_limits<unsigned long>::max()
         /// Are the SDF normals pointing inwards? default: no
         m_flip_normals = props.bool_("flip_normals", false);
 
@@ -145,6 +159,14 @@ public:
         m_radius = r;
         // Sphere --------------------------------
         sdf = sdf::Sphere(float3{ 0.f, 0.f, 0.f }, r);
+
+        if (props.has_property("bbox_min")) {
+            m_bbox_min = props.point3f("bbox_min");
+            std::cout << "Has bbox min\n";
+        
+        }
+        if (props.has_property("bbox_max"))
+            m_bbox_max = props.point3f("bbox_max");
         
         // Disp:
         //sdf = sdf::Displacement(sdf::Sphere(float3{ 0.f, 0.f, 0.f }, r), sdf::SineSDF(0, 5.0/r, 0.2*r));
@@ -154,46 +176,50 @@ public:
                    sdf::Sphere({ +1.5f * r, 0, 0 }, r));
         */
         //std::cout << props.
+        
+
         if (props.has_property("basesdf")) {
             //sdf = sdf::from_commandline(std::vector<std::string>{std::string("-sdf"), props.string("basesdf"), "-r", std::to_string(m_radius)});
+            
             std::vector<std::string> args{
-                std::string("-sdf"),
-                props.string("basesdf"),
+                std::string("-sdf")
             };
+            splitAndAppend(props.string("basesdf"), args);
             if (props.has_property("iterations")) // fractals, etc
                 args.emplace_back(std::to_string(props.int_("iterations")));
-            std::vector<std::string> possible_mods{"rotate-x","rotate-z", "rotate-y", "scale", "move", "mirror"};
+            std::vector<std::string> possible_mods;
+            if (!props.has_property("order"))
+                possible_mods = {
+                    "modulo", "rotate-x", "rotate-z", "rotate-y",
+                    "scale",  "move",     "mirror",   "sphere-difference"
+                };
+            else
+                splitAndAppend(props.string("order"), possible_mods);
+            std::vector<std::string> mods;
             for (const auto &mod : possible_mods) {
+                //std::cout << mod << "\n";
                 if (props.has_property(mod)) {
-                    args.emplace_back("-mod");
-                    args.emplace_back(mod);
-                    args.emplace_back(props.string(mod));
+                    mods.emplace_back("-mod");
+                    mods.emplace_back(mod);
+                    mods.emplace_back(props.string(mod));
                 } 
             }
-            std::string disp = "sine-displacement";
-            if (props.has_property(disp)) {
-                args.emplace_back("-mod");
-                args.emplace_back(disp);
-                props.mark_queried(disp);
-                std::vector<std::string> disp_args{ "-f", "-a","-c"};
-                for (const auto &arg : disp_args) {
-                    if (props.has_property(arg)) {
-                        args.emplace_back(arg);
-                        args.emplace_back(props.string(arg));
-                    }
-                }
-            }
-
+            //std::cout << "Before first insert\n";
+            args.insert(std::end(args), std::begin(mods), std::end(mods));
+            //std::cout << "After first insert\n";
             sdf = sdf::from_commandline(args);
+            if (props.has_property("normalssdf")) {
+                std::vector<std::string> normalargs{ std::string("-sdf") };
+                splitAndAppend(props.string("normalssdf"), normalargs);
+                normalargs.insert(std::end(normalargs), std::begin(mods), std::end(mods)); // same mods for normals sdf
+                normalssdf = sdf::from_commandline(normalargs);
+                
+            } else {
+                //std::cout << "aha\n";
+                normalssdf = sdf::from_commandline(args); //sdf; // Da error si se intenta igualar normalssdf = sdf
+            }
         } 
-        
-        if (props.has_property("modification") &&
-            props.string("modification") == std::string("sinedisplacement")) // TODO: args in xml
-            sdf = sdf::Displacement(sdf, sdf::SineSDF(0, 5.0 / r, 0.1 * r));
-
-
-        //sdf->setNormalEpsilon(r * 1e-4);
-        //sdf->setIntersectionEpsilon(r * 1e-2);
+        std::cout << "SDFWrapper constructed\n";
         update();
         set_children();
     }
@@ -228,11 +254,12 @@ public:
     
     ScalarBoundingBox3f bbox() const override {
         ScalarBoundingBox3f bbox;
-        // Temporary:
-        bbox.min = -std::numeric_limits<float>::infinity(); // m_center - m_radius*5000.0f;
-        bbox.max = std::numeric_limits<float>::infinity();// m_center +
-                                                          // m_radius*5000.0f;
-        // ...
+        //const auto& box = sdf.bbox();
+        //bbox.min        = ScalarPoint3f{ box.min[0], box.min[1], box.min[2] };
+        //bbox.max        = ScalarPoint3f{ box.max[0], box.max[1], box.max[2] };
+        bbox.min        = m_bbox_min;
+        bbox.max        = m_bbox_max;
+        //std::cout << "bbox min: " << bbox.min << "\n";
         return bbox;
     }
 
@@ -385,17 +412,17 @@ public:
         Double3 d(ray.d);
 
         // Sphere marching intersection:
-        //std::cout << "Vamos a trazar esferas\n";
         auto is = marcher.trace(sdf, toFloat3(o), toFloat3(d));
-        Mask solution_found = bool(is) && is->distance>=mint && is->distance>0;
-
-        active &= solution_found;// && !out_bounds && !in_bounds;
-        
+        Mask solution_found = bool(is) && is->distance >= mint &&
+                              is->distance <= maxt && is->distance > 0;
+        active &= solution_found; // && !out_bounds && !in_bounds;
 
         PreliminaryIntersection3f pi = zero<PreliminaryIntersection3f>();
-        pi.t = select(active,
-                      is->distance,
-                      math::Infinity<Float>);
+        if (is) {
+            pi.t = select(active, is->distance, math::Infinity<Float>);
+        } else
+            pi.t = math::Infinity<Float>;
+        
         pi.shape = this;
 
         //if (is)
@@ -413,10 +440,12 @@ public:
 
         Double3 o = Double3(ray.o) - Double3(m_center);
         Double3 d(ray.d);
-
+        // 
         // Sphere marching intersection:
         auto is = marcher.trace(sdf, toFloat3(o), toFloat3(d));
-        Mask solution_found = bool(is) && is->distance >= mint && is->distance > 0; // && is->distance > 0;
+        Mask solution_found = bool(is) && is->distance >= mint &&
+                              is->distance <= maxt &&
+                              is->distance > 0; // && is->distance > 0;
         //std::cout << "RayTest: " << solution_found << "\n";
 
         return solution_found && active; // !out_bounds && !in_bounds;
@@ -447,11 +476,13 @@ public:
         auto pLocal = m_to_object.transform_affine(p);
         // Normal
         // si.sh_frame.n = normalize(ray(pi.t) - m_center);
-        si.sh_frame.n = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
+        //si.sh_frame.n = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
+        si.sh_frame.n = normalize(toNormal(normalssdf.normal(toFloat3(pLocal))));
 
         // separate point from surface?:
-        float eps = marcher.getEps() * 200.0f; // m_radius/1000.0;
+        float eps = marcher.getEps() * 2.0f; // m_radius/1000.0;
         si.p = fmadd(si.sh_frame.n, eps, p);
+        //si.p = p;
         //si.p      = p;
         if (likely(has_flag(flags, HitComputeFlags::UV))) {
             // std::cout << "UV not implemented in SDF!" << '\n';
@@ -498,13 +529,23 @@ public:
             // si.dn_du = si.dp_du * inv_radius;
             // si.dn_dv = si.dp_dv * inv_radius;
         }
+        
 
         if (!si.is_valid()) {
           std::cout << "invalid SI !!" << '\n';
+        } else {
+            //active_material = sdf.material({ p[0], p[1], p[2] });
+            //m_bsdf = m_bsdfs[];
         }
 
         return si;
     }
+
+    /*ref<BSDF> bsdf() const override { 
+        return m_bsdfs[m_active_material]; 
+    }*/
+
+    
 
     //! @}
     // =============================================================
@@ -554,6 +595,10 @@ public:
 private:
     /// Center in world-space
     ScalarPoint3f m_center;
+
+    ScalarPoint3f m_bbox_min = -math::Infinity<Float>,
+                  m_bbox_max = math::Infinity<Float>;
+
     /// Radius in world-space
     ScalarFloat m_radius;
 
@@ -563,10 +608,33 @@ private:
 
     std::string m_basesdf;
 
+    int m_active_material; // index to the active material in this vector:
+    std::vector<ref<BSDF>> m_bsdfs;
+
     sdf::SDF sdf = sdf::Sphere(); // The sdf defining the shape
+    bool hasNormalsSdf  = false;
+    sdf::SDF normalssdf = sdf::None();
     sdf::SphereMarcher marcher;
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(SDFWrapper, Shape)
 MTS_EXPORT_PLUGIN(SDFWrapper, "SDF intersection primitive");
 NAMESPACE_END(mitsuba)
+
+
+/*
+
+            std::string disp = "sine-displacement";
+            if (props.has_property(disp)) {
+                args.emplace_back("-mod");
+                args.emplace_back(disp);
+                props.mark_queried(disp);
+                std::vector<std::string> disp_args{ "-f", "-a","-c"};
+                for (const auto &arg : disp_args) {
+                    if (props.has_property(arg)) {
+                        args.emplace_back(arg);
+                        args.emplace_back(props.string(arg));
+                    }
+                }
+            }
+*/
