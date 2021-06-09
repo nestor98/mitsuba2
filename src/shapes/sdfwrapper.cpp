@@ -14,7 +14,7 @@
 
 //#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\sphere-marcher\sphere-marcher.hpp"
 
-
+#define FORWARD_NEWTON_MARCHER
 
 #if defined(MTS_ENABLE_OPTIX)
     #include "optix/SDF.cuh"
@@ -148,6 +148,12 @@ public:
  { // std::numeric_limits<unsigned long>::max()
         /// Are the SDF normals pointing inwards? default: no
         m_flip_normals = props.bool_("flip_normals", false);
+        if (props.has_property("max_steps"))
+            marcher.setMaxSteps(props.long_("max_steps"));
+        if (props.has_property("max_dist"))
+            marcher.setMaxDist(props.float_("max_dist"));
+        if (props.has_property("eps"))
+            marcher.setEps(props.float_("eps"));
 
         //std::cout << "props: " << props << "\n";
         if (props.has_property("basesdf"))
@@ -189,10 +195,9 @@ public:
                 args.emplace_back(std::to_string(props.int_("iterations")));
             std::vector<std::string> possible_mods;
             if (!props.has_property("order"))
-                possible_mods = {
-                    "modulo", "rotate-x", "rotate-z", "rotate-y",
-                    "scale",  "move",     "mirror",   "sphere-difference"
-                };
+                possible_mods = { "modulo",   "rotate-x", "rotate-z",
+                                  "rotate-y", "scale",    "variable-scale",
+                                  "move",     "mirror",   "sphere-difference" };
             else
                 splitAndAppend(props.string("order"), possible_mods);
             std::vector<std::string> mods;
@@ -201,7 +206,8 @@ public:
                 if (props.has_property(mod)) {
                     mods.emplace_back("-mod");
                     mods.emplace_back(mod);
-                    mods.emplace_back(props.string(mod));
+                    splitAndAppend(props.string(mod), mods);
+                    //mods.emplace_back(props.string(mod));
                 } 
             }
             //std::cout << "Before first insert\n";
@@ -479,9 +485,11 @@ public:
         //si.sh_frame.n = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
         si.sh_frame.n = normalize(toNormal(normalssdf.normal(toFloat3(pLocal))));
 
+        auto geo_normal = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
+
         // separate point from surface?:
-        float eps = marcher.getEps() * 2.0f; // m_radius/1000.0;
-        si.p = fmadd(si.sh_frame.n, eps, p);
+        float eps = marcher.getEps() * 4.0f; // m_radius/1000.0;
+        si.p      = fmadd(geo_normal, eps, p);
         //si.p = p;
         //si.p      = p;
         if (likely(has_flag(flags, HitComputeFlags::UV))) {
@@ -520,7 +528,8 @@ public:
         if (m_flip_normals)
             si.sh_frame.n = -si.sh_frame.n;
         // Geometric normal:
-        si.n = si.sh_frame.n;
+        si.n = geo_normal;
+        //si.sh_frame.n;
         // << "SurfaceInteraction: " << si.n << "\n";
         //
         if (has_flag(flags, HitComputeFlags::dNSdUV)) {
@@ -614,7 +623,12 @@ private:
     sdf::SDF sdf = sdf::Sphere(); // The sdf defining the shape
     bool hasNormalsSdf  = false;
     sdf::SDF normalssdf = sdf::None();
+#ifdef SPHERE_MARCHER
     sdf::SphereMarcher marcher;
+#endif
+#ifdef FORWARD_NEWTON_MARCHER
+    sdf::ForwardNewtonMarcher marcher;
+#endif
 };
 
 MTS_IMPLEMENT_CLASS_VARIANT(SDFWrapper, Shape)
