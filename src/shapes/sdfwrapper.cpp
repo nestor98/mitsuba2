@@ -14,7 +14,8 @@
 
 //#include "D:\Universidad\cuarto-2\TFG\TFG-SDF\src\sphere-marcher\sphere-marcher.hpp"
 
-#define FORWARD_NEWTON_MARCHER
+//#define FORWARD_NEWTON_MARCHER
+#define SPHERE_MARCHER
 
 #if defined(MTS_ENABLE_OPTIX)
     #include "optix/SDF.cuh"
@@ -154,6 +155,10 @@ public:
             marcher.setMaxDist(props.float_("max_dist"));
         if (props.has_property("eps"))
             marcher.setEps(props.float_("eps"));
+        if (props.has_property("dielectric")) {
+            m_dielectric = true;
+            props.mark_queried("dielectric");
+        }
 
         //std::cout << "props: " << props << "\n";
         if (props.has_property("basesdf"))
@@ -488,8 +493,12 @@ public:
         auto geo_normal = normalize(toNormal(sdf.normal(toFloat3(pLocal))));
 
         // separate point from surface?:
-        float eps = marcher.getEps() * 4.0f; // m_radius/1000.0;
-        si.p      = fmadd(geo_normal, eps, p);
+        float eps = marcher.getEps() * 2.0f; // m_radius/1000.0;
+        
+        if (m_dielectric)
+            si.p = p;
+        else 
+            si.p = fmadd(geo_normal, eps, p);
         //si.p = p;
         //si.p      = p;
         if (likely(has_flag(flags, HitComputeFlags::UV))) {
@@ -614,6 +623,7 @@ private:
     ScalarFloat m_inv_surface_area;
 
     bool m_flip_normals;
+    bool m_dielectric = false;
 
     std::string m_basesdf;
 
